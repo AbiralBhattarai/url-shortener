@@ -9,7 +9,7 @@ def generate_short_url(url:str,length:int=6)->str:
 
         if not ShortURL.objects.filter(shortened_url = short).exists():
             return short
-        count+=1
+        counter+=1
 
 
 def get_client_ip(request):

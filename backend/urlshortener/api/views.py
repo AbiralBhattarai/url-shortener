@@ -1,23 +1,28 @@
-from rest_framework.decorators import api_view
-from rest_framework.response import Response
-from rest_framework import status
-from .models import ShortURL
-from .utils.services import generate_short_url
-
-# Create your views here.
-
-
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from .models import ShortURL
+from django.shortcuts import redirect
+from django.http import Http404
+from django.utils import timezone
+from datetime import timedelta
+from .models import ShortURL, Click
 from .utils.services import generate_short_url
-
+from .utils.throttle import check_rate_limit
+from .serializers import ShortURLSerializer, ClickSerializer
 # Create your views here.
 
 
 class CreateShortURLView(APIView):
     def post(self, request):
+        #check rate limit
+        allowed, wait_time = check_rate_limit(request)
+        if not allowed:
+            return Response(
+                {'error': f'Rate limit exceeded',
+                'time_left':wait_time},
+                status=status.HTTP_429_TOO_MANY_REQUESTS
+            )
+        
         original_url = request.data.get('original_url')
         
         if not original_url:
@@ -25,6 +30,12 @@ class CreateShortURLView(APIView):
                 {'error': 'original_url is required'},
                 status=status.HTTP_400_BAD_REQUEST
             )
+        
+        # check if url already exists
+        existing_url = ShortURL.objects.filter(original_url=original_url).first()
+        if existing_url:
+            serializer = ShortURLSerializer(existing_url)
+            return Response(serializer.data, status=status.HTTP_200_OK)
         
         # generate short url
         shortened_url = generate_short_url(original_url)
@@ -35,9 +46,55 @@ class CreateShortURLView(APIView):
             shortened_url=shortened_url
         )
         
-        return Response({
-            'id': short_url_obj.id,
-            'original_url': short_url_obj.original_url,
-            'shortened_url': short_url_obj.shortened_url,
-            'created_at': short_url_obj.created_at
-        }, status=status.HTTP_201_CREATED)
+        serializer = ShortURLSerializer(short_url_obj)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+
+class RedirectShortURLView(APIView):
+    def get(self, request, shortened_url):
+        try:
+            short_url_obj = ShortURL.objects.get(shortened_url=shortened_url)
+            
+            #create click
+            Click.objects.create(url=short_url_obj)
+            
+            #redirect to original
+            return redirect(short_url_obj.original_url)
+        except ShortURL.DoesNotExist:
+            return Response(
+                {'error': 'Short URL not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+
+class ListShortURLsView(APIView):
+    def get(self, request):
+        urls = ShortURL.objects.all()
+        serializer = ShortURLSerializer(urls, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class ClicksView(APIView):
+    def get(self, request, shortened_url):
+        try:
+            short_url_obj = ShortURL.objects.get(shortened_url=shortened_url)
+            
+            #get click from past 7 days
+            seven_days_ago = timezone.now() - timedelta(days=7)
+            clicks = Click.objects.filter(
+                url=short_url_obj,
+                clicked_at__gte=seven_days_ago
+            ).order_by('-clicked_at')
+            
+            serializer = ClickSerializer(clicks, many=True)
+            return Response({
+                'shortened_url': shortened_url,
+                'original_url': short_url_obj.original_url,
+                'total_clicks_7d': clicks.count(),
+                'clicks': serializer.data
+            }, status=status.HTTP_200_OK)
+        except ShortURL.DoesNotExist:
+            return Response(
+                {'error': 'Short URL not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )

@@ -2,9 +2,9 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from django.shortcuts import redirect
-from django.http import Http404
 from django.utils import timezone
 from datetime import timedelta
+from django.db import IntegrityError
 from .models import ShortURL, Click
 from .utils.services import generate_short_url
 from .utils.throttle import check_rate_limit
@@ -14,40 +14,51 @@ from .serializers import ShortURLSerializer, ClickSerializer
 
 class CreateShortURLView(APIView):
     def post(self, request):
-        #check rate limit
-        allowed, wait_time = check_rate_limit(request)
-        if not allowed:
-            return Response(
-                {'error': f'Rate limit exceeded',
-                'time_left':wait_time},
-                status=status.HTTP_429_TOO_MANY_REQUESTS
+        try:
+            #check rate limit
+            allowed, wait_time = check_rate_limit(request)
+            if not allowed:
+                return Response(
+                    {'error': 'Rate limit exceeded', 'retry_after': wait_time},
+                    status=status.HTTP_429_TOO_MANY_REQUESTS
+                )
+            
+            original_url = request.data.get('original_url')
+            
+            if not original_url:
+                return Response(
+                    {'error': 'original_url is required'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # check if url already exists
+            existing_url = ShortURL.objects.filter(original_url=original_url).first()
+            if existing_url:
+                serializer = ShortURLSerializer(existing_url)
+                return Response(serializer.data, status=status.HTTP_200_OK)
+            
+            # generate short url
+            shortened_url = generate_short_url(original_url)
+            
+            # save to db
+            short_url_obj = ShortURL.objects.create(
+                original_url=original_url,
+                shortened_url=shortened_url
             )
+            
+            serializer = ShortURLSerializer(short_url_obj)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
         
-        original_url = request.data.get('original_url')
-        
-        if not original_url:
+        except IntegrityError:
             return Response(
-                {'error': 'original_url is required'},
-                status=status.HTTP_400_BAD_REQUEST
+                {'error': 'Failed to create short URL'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-        
-        # check if url already exists
-        existing_url = ShortURL.objects.filter(original_url=original_url).first()
-        if existing_url:
-            serializer = ShortURLSerializer(existing_url)
-            return Response(serializer.data, status=status.HTTP_200_OK)
-        
-        # generate short url
-        shortened_url = generate_short_url(original_url)
-        
-        # save to db
-        short_url_obj = ShortURL.objects.create(
-            original_url=original_url,
-            shortened_url=shortened_url
-        )
-        
-        serializer = ShortURLSerializer(short_url_obj)
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+        except Exception:
+            return Response(
+                {'error': 'Internal server error'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 
 class RedirectShortURLView(APIView):
@@ -55,8 +66,12 @@ class RedirectShortURLView(APIView):
         try:
             short_url_obj = ShortURL.objects.get(shortened_url=shortened_url)
             
-            #create click
-            Click.objects.create(url=short_url_obj)
+            try:
+                #create click
+                Click.objects.create(url=short_url_obj)
+            except Exception:
+                #do nothing to ensure redirection even when click obj creation fails.
+                pass
             
             #redirect to original
             return redirect(short_url_obj.original_url)
@@ -65,13 +80,24 @@ class RedirectShortURLView(APIView):
                 {'error': 'Short URL not found'},
                 status=status.HTTP_404_NOT_FOUND
             )
+        except Exception:
+            return Response(
+                {'error': 'Internal server error'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 
 class ListShortURLsView(APIView):
     def get(self, request):
-        urls = ShortURL.objects.all()
-        serializer = ShortURLSerializer(urls, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        try:
+            urls = ShortURL.objects.all()
+            serializer = ShortURLSerializer(urls, many=True)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        except Exception:
+            return Response(
+                {'error': 'Internal server error'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 
 class ClicksView(APIView):
@@ -79,7 +105,7 @@ class ClicksView(APIView):
         try:
             short_url_obj = ShortURL.objects.get(shortened_url=shortened_url)
             
-            #get click from past 7 days
+            #get click from last 7 days
             seven_days_ago = timezone.now() - timedelta(days=7)
             clicks = Click.objects.filter(
                 url=short_url_obj,
@@ -97,4 +123,9 @@ class ClicksView(APIView):
             return Response(
                 {'error': 'Short URL not found'},
                 status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception:
+            return Response(
+                {'error': 'Internal server error'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )

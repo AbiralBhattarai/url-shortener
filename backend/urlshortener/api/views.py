@@ -6,7 +6,7 @@ from django.utils import timezone
 from datetime import timedelta
 from django.db import IntegrityError
 from .models import ShortURL, Click
-from .utils.services import generate_short_url
+from .utils.services import generate_short_url,get_clicks_for_url
 from .utils.throttle import check_rate_limit
 from .serializers import ShortURLSerializer, ClickSerializer
 # Create your views here.
@@ -103,20 +103,13 @@ class ListShortURLsView(APIView):
 class ClicksView(APIView):
     def get(self, request, shortened_url):
         try:
-            short_url_obj = ShortURL.objects.get(shortened_url=shortened_url)
+            data = get_clicks_for_url(shortened_url)
             
-            #get click from last 7 days
-            seven_days_ago = timezone.now() - timedelta(days=7)
-            clicks = Click.objects.filter(
-                url=short_url_obj,
-                clicked_at__gte=seven_days_ago
-            ).order_by('-clicked_at')
-            
-            serializer = ClickSerializer(clicks, many=True)
+            serializer = ClickSerializer(data['clicks'], many=True)
             return Response({
                 'shortened_url': shortened_url,
-                'original_url': short_url_obj.original_url,
-                'total_clicks_7d': clicks.count(),
+                'original_url': data['url_obj'].original_url,
+                'total_clicks_7d': data['total_count'],
                 'clicks': serializer.data
             }, status=status.HTTP_200_OK)
         except ShortURL.DoesNotExist:

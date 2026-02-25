@@ -1,6 +1,7 @@
 import hashlib
 from ..models import *
-
+from django.utils import timezone
+from datetime import timedelta
 def generate_short_url(url:str,length:int=6)->str:
     counter = 0
     while True:
@@ -17,3 +18,20 @@ def get_client_ip(request):
         if ip:
             return ip.split(",")[0]
         return request.META.get("REMOTE_ADDR")
+
+
+
+def get_clicks_for_url(shortened_url, days=7):    
+    short_url_obj = ShortURL.objects.get(shortened_url=shortened_url)
+    
+    start_date = timezone.now() - timedelta(days=days)
+    clicks = Click.objects.filter(
+        url=short_url_obj,
+        clicked_at__gte=start_date
+    ).order_by('-clicked_at')
+    
+    return {
+        'url_obj': short_url_obj,
+        'clicks': clicks,
+        'total_count': clicks.count()
+    }

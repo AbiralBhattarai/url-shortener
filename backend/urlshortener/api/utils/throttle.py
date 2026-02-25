@@ -1,8 +1,8 @@
 from django_redis import get_redis_connection
 from .services import get_client_ip
 
-RATE_LIMIT = 5  # limit per window
-WINDOW = 60  # seconds
+RATE_LIMIT = 5  #limit per window
+WINDOW = 60  #seconds
 
 
 def check_rate_limit(request):
@@ -16,7 +16,7 @@ def check_rate_limit(request):
     
     #check limit
     if current_count > RATE_LIMIT:
-        #set waiting window.
+        #set waiting window
         if current_count == RATE_LIMIT + 1:
             redis.expire(key, WINDOW)
         wait_time = redis.ttl(key)

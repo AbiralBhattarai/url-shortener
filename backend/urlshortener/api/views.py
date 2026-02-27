@@ -9,6 +9,7 @@ from .models import ShortURL, Click
 from .utils.services import generate_short_url,get_clicks_for_url
 from .utils.throttle import check_rate_limit
 from .serializers import ShortURLSerializer, ClickSerializer
+from rest_framework.pagination import PageNumberPagination
 # Create your views here.
 
 
@@ -86,13 +87,15 @@ class RedirectShortURLView(APIView):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
-
 class ListShortURLsView(APIView):
     def get(self, request):
         try:
             urls = ShortURL.objects.all()
-            serializer = ShortURLSerializer(urls, many=True)
-            return Response(serializer.data, status=status.HTTP_200_OK)
+            paginator = PageNumberPagination()
+            paginator.page_size = 2
+            paginated_urls = paginator.paginate_queryset(urls, request)
+            serializer = ShortURLSerializer(paginated_urls, many=True)
+            return paginator.get_paginated_response(serializer.data)
         except Exception:
             return Response(
                 {'error': 'Internal server error'},

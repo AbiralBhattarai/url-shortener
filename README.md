@@ -68,6 +68,7 @@ npm run dev
 
 - The frontend runs on [http://localhost:5173](http://localhost:5173)
 - The backend runs on [http://localhost:8000](http://localhost:8000)
+- API docs can be accessed at [http://localhost:8000/api/docs/](http://localhost:8000/api/docs/)
 
 ---
 

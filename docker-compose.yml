@@ -37,10 +37,12 @@ services:
 
   # Django Backend
   backend:
-    build: ./backend
+    build:
+      context: ./backend
+      network: host
     container_name: url-shortener-backend
     command: >
-      bash -c "python manage.py migrate &&
+      sh -c "python manage.py migrate &&
       gunicorn urlshortener.wsgi --bind 0.0.0.0:8000 --workers 4"
     ports:
       - "8000:8000"
@@ -63,12 +65,14 @@ services:
 
   # React Frontend
   frontend:
-    build: ./frontend/url-short
+    build:
+      context: ./frontend/url-short
+      network: host
     container_name: url-shortener-frontend
     ports:
       - "5173:5173"
     environment:
-      VITE_API_BASE_URL: http://backend:8000
+      VITE_API_BASE_URL: http://localhost:8000
     depends_on:
       - backend
     volumes:

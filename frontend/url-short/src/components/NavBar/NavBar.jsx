@@ -18,6 +18,14 @@ export default function NavBar({ activeView, onViewChange }) {
             >
                 List URLs
             </button>
+            <a 
+                href="http://localhost:8000/api/docs"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="nav-link docs-link"
+            >
+                API Docs
+            </a>
             </div>
         </div>
     </nav>

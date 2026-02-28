@@ -99,6 +99,29 @@ VITE_API_BASE_URL=http://127.0.0.1:8000
 
 ---
 
+## Rate Limiting
+
+Rate limiting is implemented in [`backend/urlshortener/api/utils/throttle.py`](backend/urlshortener/api/utils/throttle.py) using **Redis** as the backing store via `django-redis`.
+
+### How it works
+
+- Each incoming request is identified by the **client's IP address**.
+- A Redis key is created in the format `rate_limit:<ip>`.
+- On every request, Redis atomically **increments** the counter for that key using `INCR`.
+- If the counter exceeds the limit (**5 requests**), the request is rejected.
+- When the limit is first exceeded (i.e., count becomes 6), a **TTL (time-to-live) of 60 seconds** is set on the key using `EXPIRE`.
+- Subsequent blocked requests receive the **remaining wait time** (via `TTL`) so the client knows how long to wait before retrying.
+- Once the 60-second window expires, the Redis key is automatically deleted and the counter resets.
+
+### Configuration (in `throttle.py`)
+
+| Constant | Value | Description |
+|---|---|---|
+| `RATE_LIMIT` | `5` | Max requests allowed per window |
+| `WINDOW` | `60` | Window duration in seconds |
+
+---
+
 ## Notes
 
 - **Redis** is required for rate limiting. Make sure the Docker container is running.
